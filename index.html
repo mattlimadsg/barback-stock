@@ -1,3 +1,582 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101923"><title>Barback Stock</title><style>:root{font-family:system-ui,-apple-system,sans-serif;color:#f5f8fc;background:#101923}*{box-sizing:border-box}body{margin:0;padding:20px 14px 90px;max-width:680px;margin:auto}header{display:flex;justify-content:space-between;align-items:center}h1{font-size:24px;margin:0}small,.muted{color:#9eb0c2}button,input,select{font:inherit}button{cursor:pointer;border:1px solid #43556a;background:#223347;color:white;border-radius:10px;padding:10px}button.primary{background:#236ca3;border-color:#236ca3}button:disabled{opacity:.4}nav,.sides{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:16px 0}.sides{grid-template-columns:repeat(3,1fr)}nav button.active,.sides button.active{background:#236ca3;border-color:#7cbbef}.panel{background:#1c2b3a;padding:14px;border-radius:14px;margin:15px 0}.product,.task{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #34495d}.product:last-child,.task:last-child{border:0}.product .name{flex:1;min-width:0}.counter{display:flex;align-items:center;gap:10px}.counter button{min-width:37px}.counter strong{min-width:23px;text-align:center}.add{display:flex;gap:8px}.add input{min-width:0;flex:1;background:#0e1b28;color:white;border:1px solid #526578;padding:11px;border-radius:9px}.row{display:flex;justify-content:space-between;align-items:center;gap:10px}.tag{background:#24435c;padding:6px 10px;border-radius:30px;font-size:12px}.task label{display:flex;align-items:center;gap:10px;flex:1}.task input{width:20px;height:20px}.task.done{opacity:.55;text-decoration:line-through}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{flex:1}.danger{color:#ffadad}.tiny{font-size:12px}#notice{margin-top:8px;color:#b7d7ef}</style></head><body><header><div><h1>🍸 Barback Stock</h1><small>37 Dawson Street · Main Bar</small></div><span class="tag">Closing shift</span></header><div class="panel row"><div><small>Units to collect</small><h1 id="total">0</h1></div><div><small>Products needed</small><h1 id="types">0</h1></div></div><nav id="tabs"></nav><div class="panel"><div class="row"><h2 id="heading" style="margin:0;font-size:18px"></h2><button id="edit">Edit products</button></div><div class="sides" id="sides"></div><p class="muted tiny">Count the missing units needed to fill the available spaces.</p><div id="products"></div><form id="addForm" class="add" style="margin-top:16px"><input id="newProduct" placeholder="New product name" required maxlength="80"><button class="primary">+ Add</button></form></div><div class="panel"><div class="row"><h2 style="margin:0;font-size:18px">Combined restock list</h2><button id="reset">New shift</button></div><p class="muted tiny">Items are combined by product, with left/right breakdown where applicable.</p><div id="tasks"></div><div class="actions" style="margin-top:16px"><button class="primary" id="copy">Copy list</button><button id="share">Share list</button></div><div id="notice" class="tiny"></div></div><p class="muted tiny">Data is saved on this device/browser. Photo recognition and cross-device sync are not included yet. Example products must be checked against the real bar stock.</p><script>
-const defaults={beers:['Heineken','Corona','Peroni','Coors','Bulmers'],sodas:['Coca-Cola','Coke Zero','7UP','Ginger Ale','Ginger Beer','Soda Water','Tonic Water','Club Orange','Club Lemon / Lime','Elderflower','Sugar-Free Tonic','Other Red Soda'],wines:['Sauvignon Blanc','Rosé','Red Wine','White Wine','Moët & Chandon','Still Water','Sparkling Water'],spirits:['Tanqueray Gin','Ketel One Vodka','Cointreau','Don Julio Blanco','Baileys','Kahlúa','Roe & Co']};const labels={beers:'Beers',sodas:'Sodas',wines:'Wines / Water',spirits:'Spirits'};const storage='barback-stock-v1';let saved={};try{saved=JSON.parse(localStorage.getItem(storage)||'{}')}catch{};let state={catalog:structuredClone(defaults),counts:{},done:{},tab:'beers',side:'left',...saved},editing=false;const $=id=>document.getElementById(id);const persist=()=>localStorage.setItem(storage,JSON.stringify(state));const key=(cat,side,name)=>JSON.stringify([cat,side,name]);const loc=cat=>cat==='beers'?'main':state.side;function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e}function button(txt,fn,cls=''){const b=el('button',cls,txt);b.type='button';b.onclick=fn;return b}function render(){persist();$('tabs').replaceChildren(...Object.keys(labels).map(cat=>button(labels[cat],()=>{state.tab=cat;editing=false;render()},state.tab===cat?'active':'')));$('heading').textContent=labels[state.tab];$('edit').textContent=editing?'Done':'Edit products';$('sides').replaceChildren(...['left','right','middle'].map(side=>button(side[0].toUpperCase()+side.slice(1),()=>{state.side=side;render()},state.side===side?'active':'')));$('sides').style.display=state.tab==='beers'?'none':'grid';const productNodes=state.catalog[state.tab].map(name=>{const k=key(state.tab,loc(state.tab),name),count=state.counts[k]||0;const r=el('div','product'),left=el('div','name');left.append(el('strong','',name));if(editing){left.append(el('br'));left.append(button('Rename',()=>{const next=prompt('New name',name)?.trim();if(!next||next===name)return;if(state.catalog[state.tab].some(n=>n.toLowerCase()===next.toLowerCase()))return alert('Product already exists');state.catalog[state.tab]=state.catalog[state.tab].map(n=>n===name?next:n);for(const area of ['main','left','right','middle']){const old=key(state.tab,area,name),newKey=key(state.tab,area,next);if(old in state.counts){state.counts[newKey]=state.counts[old];delete state.counts[old]}if(old in state.done){state.done[newKey]=state.done[old];delete state.done[old]}}render()},'tiny'));left.append(button('Remove',()=>{if(!confirm('Remove '+name+'?'))return;state.catalog[state.tab]=state.catalog[state.tab].filter(n=>n!==name);for(const area of ['main','left','right','middle']){delete state.counts[key(state.tab,area,name)];delete state.done[key(state.tab,area,name)]}render()},'tiny danger'))}const ctr=el('div','counter');ctr.append(button('−',()=>{state.counts[k]=Math.max(0,count-1);if(!state.counts[k])delete state.done[k];render()}),el('strong','',String(count)),button('+',()=>{state.counts[k]=count+1;render()}));r.append(left,ctr);return r});$('products').replaceChildren(...productNodes);const grouped=new Map();for(const [k,q] of Object.entries(state.counts)){if(q<=0)continue;let parts;try{parts=JSON.parse(k)}catch{continue}const [cat,side,name]=parts;if(!grouped.has(name))grouped.set(name,{name,total:0,parts:[]});const x=grouped.get(name);x.total+=q;x.parts.push({cat,side,q,k})}const entries=[...grouped.values()];$('total').textContent=entries.reduce((n,e)=>n+e.total,0);$('types').textContent=entries.length;const tasks=entries.map(e=>{const r=el('div','task'),label=el('label'),check=el('input');check.type='checkbox';check.checked=e.parts.every(p=>state.done[p.k]);r.classList.toggle('done',check.checked);check.onchange=()=>{for(const p of e.parts)state.done[p.k]=check.checked;render()};const info=el('div');info.append(el('strong','',e.name),el('div','muted tiny',e.parts.map(p=>`${labels[p.cat]} · ${p.side}: ${p.q}`).join(' | ')));label.append(check,info);r.append(label,el('strong','',`×${e.total}`));return r});$('tasks').replaceChildren(...(tasks.length?tasks:[el('p','muted','No items added yet.')]));}function listText(){const m=new Map();for(const [k,q] of Object.entries(state.counts)){if(q<=0)continue;const [cat,side,name]=JSON.parse(k);if(!m.has(name))m.set(name,[]);m.get(name).push(`${side}: ${q}`)}return 'MAIN BAR — RESTOCK\n'+([...m].map(([name,areas])=>`${name} — ${areas.join(', ')}`).join('\n')||'Nothing to restock')}$('edit').onclick=()=>{editing=!editing;render()};$('addForm').onsubmit=e=>{e.preventDefault();const name=$('newProduct').value.trim();if(!name)return;if(state.catalog[state.tab].some(n=>n.toLowerCase()===name.toLowerCase()))return alert('This product already exists');state.catalog[state.tab].push(name);$('newProduct').value='';render()};$('reset').onclick=()=>{if(!confirm('Start a new shift? This clears quantities and checkmarks, but keeps your products.'))return;state.counts={};state.done={};render()};$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(listText());$('notice').textContent='List copied.'}catch{$('notice').textContent='Copy not available in this browser.'}};$('share').onclick=async()=>{if(navigator.share){try{await navigator.share({title:'Barback Stock',text:listText()})}catch{}}else $('copy').click()};render();
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f3eee3"><title>Barback Stock</title><style>:root{font-family:system-ui,-apple-system,sans-serif;color:#f5f8fc;background:#101923}*{box-sizing:border-box}body{margin:0;padding:20px 14px 90px;max-width:680px;margin:auto}header{display:flex;justify-content:space-between;align-items:center}h1{font-size:24px;margin:0}small,.muted{color:#9eb0c2}button,input,select{font:inherit}button{cursor:pointer;border:1px solid #43556a;background:#223347;color:white;border-radius:10px;padding:10px}button.primary{background:#236ca3;border-color:#236ca3}button:disabled{opacity:.4}nav,.sides{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:16px 0}.sides{grid-template-columns:repeat(3,1fr)}nav button.active,.sides button.active{background:#236ca3;border-color:#7cbbef}.panel{background:#1c2b3a;padding:14px;border-radius:14px;margin:15px 0}.product,.task{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #34495d}.product:last-child,.task:last-child{border:0}.product .name{flex:1;min-width:0}.counter{display:flex;align-items:center;gap:10px}.counter button{min-width:37px}.counter strong{min-width:23px;text-align:center}.add{display:flex;gap:8px}.add input{min-width:0;flex:1;background:#0e1b28;color:white;border:1px solid #526578;padding:11px;border-radius:9px}.row{display:flex;justify-content:space-between;align-items:center;gap:10px}.tag{background:#24435c;padding:6px 10px;border-radius:30px;font-size:12px}.task label{display:flex;align-items:center;gap:10px;flex:1}.task input{width:20px;height:20px}.task.done{opacity:.55;text-decoration:line-through}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{flex:1}.danger{color:#ffadad}.tiny{font-size:12px}#notice{margin-top:8px;color:#b7d7ef}
+h3{font-size:15px;margin:16px 0 0;color:#b7d7ef}
+.task{flex-wrap:wrap}
+.task label{min-width:0;overflow-wrap:anywhere}
+.task .breakdown{overflow-wrap:anywhere}
+.task-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;width:100%}
+.task.done label{text-decoration:line-through}
+.task.done{opacity:1;text-decoration:none}
+.task button[aria-pressed=true]{border-color:#ffadad;color:#ffadad}
+select{max-width:100%;background:#223347;color:white;border:1px solid #43556a;border-radius:10px;padding:10px}
+.summary{display:block;margin-top:4px}
+.history-entry{margin:10px 0;border-bottom:1px solid #34495d;padding:8px 0}
+.history-entry summary{cursor:pointer}
+.history-entry pre{font:inherit;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+#notice{min-height:1em}
+:root{
+  --ink:#28281e;
+  --muted:#615e50;
+  --paper:#fffdf7;
+  --line:#ded6c6;
+  --olive:#354432;
+  --olive-light:#e9ecdf;
+  --brick:#8a392c;
+  color:var(--ink);
+  background:#f3eee3;
+  accent-color:var(--olive);
+}
+body{padding-top:18px}
+header{gap:12px;padding:12px 0 16px;border-bottom:1px solid #d1c6b3}
+.brand{display:flex;align-items:center;gap:14px;min-width:0}
+.brand img{width:74px;height:74px;object-fit:contain;flex:none}
+h1,h2{font-family:Georgia,'Times New Roman',serif;letter-spacing:-.025em}
+h1{font-size:clamp(24px,5.2vw,34px);line-height:1.04}
+.brand small{display:block;margin-top:5px}
+small,.muted{color:var(--muted)}
+.tag{background:#e9dfcc;color:#59452e;border:1px solid #ddceb4;text-align:center}
+.panel{background:var(--paper);border:1px solid var(--line);padding:16px;box-shadow:0 3px 12px #52432b0a}
+button,select{border-color:#cfc5b2;background:#faf6ed;color:var(--ink);min-height:44px}
+#products,#tasks,button,input[type=checkbox],select{touch-action:manipulation}
+button.primary,nav button.active,.sides button.active{background:var(--olive);border-color:var(--olive);color:#fffdf7}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #88642b;outline-offset:2px}
+button:disabled{cursor:default}
+.product,.task,.history-entry{border-color:var(--line)}
+.product .name{overflow-wrap:anywhere}
+.counter button,.task-controls button,.edit-controls button{min-width:44px}
+.counter strong,.metric strong{font-variant-numeric:tabular-nums}
+.add input{background:#fffdf8;color:var(--ink);border-color:#cfc5b2;font-size:16px}
+.add input::placeholder{color:#716952}
+h3{color:var(--olive)}
+.danger,.task button[aria-pressed=true]{color:var(--brick)}
+.task button[aria-pressed=true]{background:#f7e6df;border-color:#b16c5c}
+#notice{color:var(--olive)}
+nav .secondary-tab{grid-column:1/-1;font-size:14px}
+nav .secondary-tab:not(.active){background:#eee8db}
+.edit-controls{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.product:has(.edit-controls){align-items:flex-start}
+.shift-summary{background:var(--olive);color:#fffdf7;border-color:var(--olive);padding:18px}
+.shift-summary h2{margin:0 0 14px;font-size:22px}
+.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.metric{min-width:0;border-radius:9px;padding:9px;background:#ffffff12}
+.metric strong{display:block;font-size:26px;line-height:1}
+.metric small,.shift-summary small{color:#f4eddb}
+.metric small{display:block;margin-top:6px;font-size:12px;line-height:1.2}
+.progress-row{margin-top:12px}
+progress{display:block;width:100%;height:8px;border:0;border-radius:10px;overflow:hidden;background:#253324;color:#d9bc83;margin-top:6px}
+progress::-webkit-progress-bar{background:#253324}
+progress::-webkit-progress-value{background:#d9bc83}
+progress::-moz-progress-bar{background:#d9bc83}
+@media(max-width:390px){
+  body{padding-inline:10px}
+  .brand{gap:8px}
+  .brand img{width:57px;height:57px}
+  .tag{padding-inline:7px}
+  .panel{padding:12px}
+  .counter{gap:4px}
+  .task-controls{gap:6px}
+  .product:has(.edit-controls){flex-wrap:wrap}
+  .product:has(.edit-controls) .name{flex-basis:100%}
+}
+.product-search{margin:12px 0 4px}
+.product-pages{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin-top:8px}
+.product-pages[hidden]{display:none}
+.product-pages button{font-size:14px}
+.product-pages button:first-child{justify-self:start}
+.product-pages button:last-child{justify-self:end}
+.quantity{width:52px;min-height:44px;padding:4px;border:1px solid #cfc5b2;border-radius:9px;background:var(--paper);color:var(--ink);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;text-align:center;touch-action:manipulation}
+</style> </head><body><header><div class="brand"><img src="data:image/png;base64,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" width="74" height="74" alt="37 Dawson Street logo"><div><h1>Barback Stock</h1><small>37 Dawson Street · Dublin</small></div></div><span class="tag">Closing shift</span></header>
+<div class="row" style="margin-top:16px"><label for="bar">Bar</label>
+<select id="bar"><option>Main Bar</option><option disabled>Middle · Coming Soon</option><option disabled>Whiskey · Coming Soon</option><option disabled>Upstairs · Coming Soon</option></select></div> <section class="panel shift-summary" aria-labelledby="summaryHeading">
+  <h2 id="summaryHeading">Shift overview</h2>
+  <div class="metrics">
+    <div class="metric"><strong id="total">0</strong><small>Units to collect</small></div>
+    <div class="metric"><strong id="types">0</strong><small>Products to collect</small></div>
+    <div class="metric"><strong id="unavailableTotal">0</strong><small>Products on 86</small></div>
+  </div>
+  <div class="progress-row"><small id="progressText">0 of 0 units restocked</small>
+    <progress id="restockProgress" value="0" max="1" aria-labelledby="progressText"></progress>
+  </div>
+</section>
+<nav id="tabs" aria-label="Product categories"></nav>
+<div class="panel"><div class="row"><h2 id="heading" style="margin:0;font-size:18px"></h2><button id="edit">Edit products</button></div><div class="sides" id="sides"></div><p class="muted tiny">Use − / + or tap the number to enter the units needed.</p><div class="add product-search"><input type="search" id="productSearch" aria-label="Search all drinks" placeholder="Search all drinks" autocomplete="off"></div>
+<div id="products"></div>
+<div id="productPages" class="product-pages" hidden>
+  <button type="button" id="previousProducts">‹ Previous</button>
+  <small id="productRange" role="status"></small>
+  <button type="button" id="nextProducts">Next ›</button>
+</div>
+<form id="addForm" class="add" style="margin-top:16px"><input id="newProduct" aria-label="New product name" placeholder="New product name" required maxlength="80"><button class="primary">+ Add</button></form></div><div class="panel"><div class="row"><h2 style="margin:0;font-size:18px">Combined restock list</h2><button id="markAll">Mark all done</button></div><p class="muted tiny">Combine quantities by product. Tick to finish, use − / + for partial restock, or mark 86 if stock runs out.</p><div id="tasks"></div><div class="actions" style="margin-top:16px"><button class="primary" id="copy">Copy list</button><button id="share">Share list</button></div>
+<div class="actions" style="margin-top:8px"><button class="primary" id="save">Save &amp; Close Shift</button><button class="danger" id="reset">Reset Without Saving</button></div>
+<div id="notice" class="tiny" role="status"></div></div>
+<section class="panel" aria-labelledby="historyHeading">
+<h2 id="historyHeading" style="margin:0;font-size:18px">Closing history</h2>
+<div class="add" style="margin-top:12px"><input type="search" id="historySearch" aria-label="Search closing history" placeholder="Search by date, product or status"></div>
+<div id="history"></div></section> <p class="muted tiny">Closing shifts are saved in this browser on this device. Check the example products against the bar’s catalog.</p><script>
+const defaults={beers:['Heineken','Corona','Peroni','Coors','Bulmers'],sodas:['Coca-Cola','Coke Zero','7UP','Ginger Ale','Ginger Beer','Soda Water','Tonic Water','Club Orange','Club Lemon / Lime','Elderflower','Sugar-Free Tonic','Other Red Soda'],wines:['Sauvignon Blanc','Rosé','Red Wine','White Wine','Moët & Chandon','Still Water','Sparkling Water'],spirits:['Tanqueray Gin','Ketel One Vodka','Cointreau','Don Julio Blanco','Baileys','Kahlúa','Roe & Co'],lessUsed:[]};const labels={beers:'Beers',sodas:'Sodas',wines:'Wines / Water',spirits:'Spirits',lessUsed:'Less Used'};
+const storage = 'barback-stock-v1';
+const categories = Object.keys(labels);
+const sides = ['left', 'right', 'middle'];
+const areasFor = cat => cat === 'beers' ? ['main'] : sides;
+const key = (cat, side, name) => JSON.stringify([cat, side, name]);
+const productKey = (cat, name) => JSON.stringify([cat, name]);
+const capitalize = text => text[0].toUpperCase() + text.slice(1);
+const $ = id => document.getElementById(id);
+
+let saved = {};
+try {
+  saved = JSON.parse(localStorage.getItem(storage) || '{}') || {};
+} catch {}
+let state = {
+  catalog: structuredClone(defaults), counts: {}, done: {},
+  tab: 'beers', side: 'left', unavailable: {}, history: [], ...saved
+};
+state.catalog = {...structuredClone(defaults), ...state.catalog};
+let editing = false;
+const pageSize = 6;
+let productPage = 0;
+const searchKey = text => text.trim().normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+const productQuery = () => searchKey($('productSearch').value);
+
+function entries(current = state) {
+  return categories.flatMap(cat => current.catalog[cat].map(name => {
+    const id = productKey(cat, name);
+    const parts = areasFor(cat).map(side => {
+      const id = key(cat, side, name);
+      return {side, id, quantity: current.counts[id] || 0};
+    });
+    const total = parts.reduce((sum, part) => sum + part.quantity, 0);
+    const stocked = Math.min(total, current.stocked?.[id] ?? parts.reduce(
+      (sum, part) => sum + (current.done[part.id] ? part.quantity : 0), 0
+    ));
+    const remaining = total - stocked;
+    return {cat, name, id, parts, total, stocked, remaining, unavailable: Boolean(current.unavailable[id] && remaining)};
+  }));
+}
+
+if (!state.stocked) {
+  state.stocked = Object.fromEntries(entries().filter(item => item.stocked).map(item => [item.id, item.stocked]));
+}
+
+function el(tag, cls, text) {
+  const element = document.createElement(tag);
+  if (cls) element.className = cls;
+  if (text !== undefined) element.textContent = text;
+  return element;
+}
+
+function button(text, action, cls, label) {
+  const control = el('button', cls, text);
+  control.type = 'button';
+  control.onclick = action;
+  if (label) control.setAttribute('aria-label', label);
+  return control;
+}
+
+function notice(message) {
+  $('notice').textContent = message;
+}
+
+function persist(next) {
+  try {
+    localStorage.setItem(storage, JSON.stringify(next));
+    return true;
+  } catch {
+    notice('Could not save to this browser. Check available storage and try again.');
+    return false;
+  }
+}
+
+function update() {
+  notice('');
+  persist(state);
+  render();
+}
+
+function changeProduct(name, next) {
+  const cat = state.tab;
+  if (next && state.catalog[cat].some(item => item !== name && item.toLowerCase() === next.toLowerCase())) {
+    alert('Product already exists');
+    return;
+  }
+  state.catalog[cat] = next
+    ? state.catalog[cat].map(item => item === name ? next : item)
+    : state.catalog[cat].filter(item => item !== name);
+
+  function move(record, from, to) {
+    if (to && Object.hasOwn(record, from)) record[to] = record[from];
+    delete record[from];
+  }
+  for (const area of areasFor(cat)) {
+    const from = key(cat, area, name);
+    const to = next && key(cat, area, next);
+    move(state.counts, from, to);
+    move(state.done, from, to);
+  }
+  for (const record of [state.stocked, state.unavailable]) {
+    move(record, productKey(cat, name), next && productKey(cat, next));
+  }
+  update();
+}
+
+function changeQuantity(item, part, quantity) {
+  const total = item.total + quantity - part.quantity;
+  if (!Number.isSafeInteger(quantity) || quantity < 0 || !Number.isSafeInteger(total) || quantity === part.quantity) return;
+  if (quantity) state.counts[part.id] = quantity;
+  else delete state.counts[part.id];
+
+  part.quantity = quantity;
+  item.total = total;
+  item.stocked = Math.min(total, item.stocked);
+  setStocked(item, item.stocked);
+  notice('');
+  persist(state);
+  renderChecklist(activeEntries());
+}
+
+function moveProduct(cat, from, to) {
+  const list = state.catalog[cat];
+  if (to < 0 || to >= list.length) return;
+  [list[from], list[to]] = [list[to], list[from]];
+  productPage = Math.floor(to / pageSize);
+  update();
+  const row = $('products').children[to % pageSize];
+  const direction = to < from ? '.move-up' : '.move-down';
+  const control = row.querySelector(direction);
+  (control.disabled ? row.querySelector('button:not(:disabled)') : control)?.focus({preventScroll: true});
+  row.scrollIntoView({block: 'nearest'});
+}
+
+function setStocked(item, quantity) {
+  const stocked = Math.max(0, Math.min(item.total, quantity));
+  if (stocked) state.stocked[item.id] = stocked;
+  else delete state.stocked[item.id];
+  if (stocked === item.total) delete state.unavailable[item.id];
+
+  // Keep legacy completion flags accurate when the entire product is done.
+  for (const part of item.parts) {
+    if (item.total && stocked === item.total && state.counts[part.id]) state.done[part.id] = true;
+    else delete state.done[part.id];
+  }
+}
+
+function renderProduct(item) {
+  const {name, cat} = item;
+  const part = item.parts.find(part => part.side === (cat === 'beers' ? 'main' : state.side));
+  const row = el('div', 'product');
+  const info = el('div', 'name');
+  info.append(el('strong', '', name));
+  const summary = el('small', 'summary');
+  if (cat !== 'beers' || productQuery()) info.append(summary);
+  const updateSummary = () => {
+    summary.textContent = (productQuery() ? labels[cat] + ' · ' : '') + 'Total needed ' + item.total;
+  };
+  updateSummary();
+  if (editing) {
+    const catalog = state.catalog[cat];
+    const index = catalog.indexOf(name);
+    const up = button('↑', () => moveProduct(cat, index, index - 1), 'move-up', 'Move ' + name + ' up');
+    const down = button('↓', () => moveProduct(cat, index, index + 1), 'move-down', 'Move ' + name + ' down');
+    up.disabled = index === 0;
+    down.disabled = index === catalog.length - 1;
+    const tools = el('div', 'edit-controls');
+    tools.append(up, down, button('Rename', () => {
+      const next = prompt('New name', name)?.trim();
+      if (next && next !== name) changeProduct(name, next);
+    }, 'tiny'), button('Remove', () => {
+      if (confirm('Remove ' + name + '?')) changeProduct(name);
+    }, 'tiny danger'));
+    info.append(tools);
+  }
+  const counter = el('div', 'counter');
+  const amount = el('input', 'quantity');
+  amount.type = 'text';
+  amount.inputMode = 'numeric';
+  amount.enterKeyHint = 'done';
+  amount.autocomplete = 'off';
+  amount.setAttribute('aria-label', 'Units needed for ' + name + ' · ' + capitalize(part.side));
+  amount.value = String(part.quantity);
+  function applyAmount(quantity) {
+    changeQuantity(item, part, quantity);
+    amount.value = String(part.quantity);
+    updateSummary();
+  }
+  amount.onfocus = () => amount.select();
+  amount.onblur = () => {
+    const typed = amount.value.trim();
+    applyAmount(/^\d+$/.test(typed) ? Number(typed) : part.quantity);
+  };
+  amount.onkeydown = event => {
+    if (event.key === 'Escape') amount.value = String(part.quantity);
+    if (event.key === 'Enter' || event.key === 'Escape') {
+      event.preventDefault();
+      amount.blur();
+    }
+  };
+  counter.append(
+    button('−', () => applyAmount(Math.max(0, part.quantity - 1)), '', 'Decrease ' + name + ' needed'),
+    amount,
+    button('+', () => applyAmount(part.quantity + 1), '', 'Increase ' + name + ' needed')
+  );
+  row.append(info, counter);
+  return row;
+}
+
+function breakdown(item) {
+  return item.parts.map(part => capitalize(part.side) + ' ' + part.quantity).join(' · ');
+}
+
+function progress(item) {
+  return item.stocked + ' stocked · ' + item.remaining + ' remaining' + (item.unavailable ? ' · 86 / Out of stock' : '');
+}
+
+function stockAndRender(item, quantity) {
+  setStocked(item, quantity);
+  update();
+}
+
+function renderTask(item) {
+  const row = el('div', 'task' + (item.remaining ? '' : ' done'));
+  const label = el('label');
+  const check = el('input');
+  check.type = 'checkbox';
+  check.checked = item.remaining === 0;
+  check.onchange = () => stockAndRender(item, check.checked ? item.total : 0);
+  const info = el('div');
+  info.append(el('strong', '', item.name), el('div', 'muted tiny breakdown', breakdown(item)));
+  label.append(check, info);
+  const controls = el('div', 'task-controls');
+  const minus = button('−', () => stockAndRender(item, item.stocked - 1), '', 'Decrease ' + item.name + ' stocked');
+  const plus = button('+', () => stockAndRender(item, item.stocked + 1), '', 'Increase ' + item.name + ' stocked');
+  minus.disabled = item.stocked === 0;
+  plus.disabled = item.remaining === 0;
+  const unavailable = button('86', () => {
+    if (item.unavailable) delete state.unavailable[item.id];
+    else state.unavailable[item.id] = true;
+    update();
+  }, '', '86 / Out of stock for ' + item.name);
+  unavailable.disabled = item.remaining === 0;
+  unavailable.setAttribute('aria-pressed', String(item.unavailable));
+  controls.append(minus, plus, unavailable, el('small', '', progress(item)));
+  row.append(label, el('strong', '', '×' + item.total), controls);
+  return row;
+}
+
+function activeEntries() {
+  return entries().filter(item => item.total > 0);
+}
+
+function renderCatalog(all) {
+  const query = productQuery();
+  const products = all.filter(item => query ? searchKey(item.name).includes(query) : item.cat === state.tab);
+  const lastPage = Math.max(0, Math.ceil(products.length / pageSize) - 1);
+  productPage = Math.min(productPage, lastPage);
+  const start = productPage * pageSize;
+  const page = products.slice(start, start + pageSize);
+  $('heading').textContent = query ? 'Search results' : labels[state.tab];
+  $('edit').disabled = Boolean(query);
+  $('sides').style.display = (query ? products.every(item => item.cat === 'beers') : state.tab === 'beers') ? 'none' : 'grid';
+  $('products').replaceChildren(...(page.length ? page.map(renderProduct) :
+    [el('p', 'muted', query ? 'No matching drinks.' : 'No drinks added in this category yet.')]));
+  $('productPages').hidden = lastPage === 0;
+  $('previousProducts').disabled = productPage === 0;
+  $('nextProducts').disabled = productPage === lastPage;
+  $('productRange').textContent = (start + 1) + '–' + (start + page.length) + ' of ' + products.length;
+}
+
+function render() {
+  const all = entries();
+  $('tabs').replaceChildren(...categories.map(cat => button(labels[cat], () => {
+    state.tab = cat;
+    editing = false;
+    $('productSearch').value = '';
+    productPage = 0;
+    update();
+  }, [state.tab === cat ? 'active' : '', cat === 'lessUsed' ? 'secondary-tab' : ''].join(' '))));
+  $('edit').textContent = editing ? 'Done' : 'Edit products';
+  $('sides').replaceChildren(...sides.map(side => button(capitalize(side), () => {
+    state.side = side;
+    update();
+  }, state.side === side ? 'active' : '')));
+  renderCatalog(all);
+  renderChecklist(all.filter(item => item.total > 0));
+}
+
+function renderChecklist(active) {
+  const toCollect = active.filter(item => item.remaining && !item.unavailable);
+  const needed = active.reduce((sum, item) => sum + item.total, 0);
+  const stocked = active.reduce((sum, item) => sum + item.stocked, 0);
+  const unavailable = active.filter(item => item.unavailable);
+  $('total').textContent = toCollect.reduce((sum, item) => sum + item.remaining, 0);
+  $('types').textContent = toCollect.length;
+  $('unavailableTotal').textContent = unavailable.length;
+  $('restockProgress').max = needed || 1;
+  $('restockProgress').value = stocked;
+  $('progressText').textContent = stocked + ' of ' + needed + ' units restocked';
+
+  const groups = categories.flatMap(cat => {
+    const items = active.filter(item => item.cat === cat);
+    if (!items.length) return [];
+    const group = el('section');
+    group.append(el('h3', '', labels[cat]), ...items.map(renderTask));
+    return [group];
+  });
+  $('tasks').replaceChildren(...(groups.length ? groups : [el('p', 'muted', 'No items added yet.')]));
+  $('markAll').disabled = !active.some(item => item.remaining && !item.unavailable);
+}
+
+function listText(items, date) {
+  const lines = [date ? 'MAIN BAR — CLOSING REPORT' : 'MAIN BAR — RESTOCK'];
+  if (date) lines.push(date);
+  const summaries = new Map();
+  for (const item of items) {
+    if (!summaries.has(item.name)) summaries.set(item.name, {stocked: 0, total: 0, remaining: 0});
+    const summary = summaries.get(item.name);
+    summary.stocked += item.stocked;
+    summary.total += item.total;
+    summary.remaining += item.remaining;
+  }
+  lines.push('', 'PRODUCT TOTALS');
+  if (!items.length) lines.push('Nothing to restock');
+  for (const [name, {stocked, total, remaining}] of summaries) {
+    lines.push(name + ' — ' + stocked + ' stocked · ' + total + ' needed · ' + remaining + ' remaining');
+  }
+  lines.push('', '86 / OUT OF STOCK');
+  const unavailable = items.filter(item => item.unavailable);
+  if (!unavailable.length) lines.push('None');
+  for (const item of unavailable) {
+    lines.push(item.name + ' — ' + item.remaining + ' unavailable · ' + labels[item.cat]);
+  }
+  lines.push('', 'DETAILS BY AREA');
+  if (!items.length) lines.push('No areas to report');
+  for (const cat of categories) {
+    const group = items.filter(item => item.cat === cat);
+    if (!group.length) continue;
+    lines.push('', labels[cat]);
+    for (const item of group) {
+      lines.push(item.name + ' — Total ' + item.total + ' · ' + breakdown(item) + ' · ' + progress(item));
+    }
+  }
+  return lines.join('\n');
+}
+
+async function copyText(text, feedback = notice) {
+  try {
+    await navigator.clipboard.writeText(text);
+    feedback('Copied.');
+  } catch {
+    const field = el('textarea');
+    field.value = text;
+    field.setAttribute('aria-label', 'Text to copy');
+    document.body.append(field);
+    field.select();
+    let copied = false;
+    try { copied = document.execCommand('copy'); } catch {}
+    if (copied) field.remove();
+    feedback(copied ? 'Copied.' : 'Copy the selected text manually.');
+    if (!copied) field.scrollIntoView();
+  }
+}
+
+function renderHistory() {
+  const query = $('historySearch').value.trim().toLowerCase().split(/\s+/);
+  const matches = state.history.filter(report => {
+    const searchable = (report.day + '\n' + report.text).toLowerCase();
+    return query.every(term => searchable.includes(term));
+  });
+  $('history').replaceChildren(...matches.map(report => {
+    const entry = el('details', 'history-entry');
+    const status = el('span', 'muted tiny');
+    status.setAttribute('role', 'status');
+    entry.append(
+      el('summary', '', report.date + ' · Main Bar'),
+      el('pre', '', report.text),
+      button('Copy report', () => copyText(report.text, message => { status.textContent = ' ' + message; })),
+      status
+    );
+    return entry;
+  }));
+  if (!matches.length) {
+    $('history').append(el('p', 'muted', state.history.length ? 'No matching closings.' : 'No saved closings yet.'));
+  }
+}
+
+function closeShift(save) {
+  const items = activeEntries();
+  if (!confirm(save
+    ? 'Save this Main Bar closing and start a new shift?'
+    : 'Clear this shift without saving a closing report?')) return;
+
+  let history = state.history;
+  if (save) {
+    const now = new Date();
+    const date = now.toLocaleString('en-IE', {dateStyle: 'medium', timeStyle: 'short'});
+    const day = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+    history = [{date, day, text: listText(items, date)}, ...history];
+  }
+  const next = {...state, counts: {}, done: {}, stocked: {}, unavailable: {}, history};
+  if (!persist(next)) return;
+  state = next;
+  editing = false;
+  $('newProduct').value = '';
+  if (save) $('historySearch').value = '';
+  render();
+  renderHistory();
+  notice(save ? 'Closing saved. New shift started.' : 'Shift reset.');
+}
+
+$('edit').onclick = () => { editing = !editing; render(); };
+$('productSearch').oninput = () => {
+  if (editing) {
+    editing = false;
+    $('edit').textContent = 'Edit products';
+  }
+  productPage = 0;
+  renderCatalog(entries());
+};
+$('previousProducts').onclick = () => {
+  productPage = Math.max(0, productPage - 1);
+  renderCatalog(entries());
+};
+$('nextProducts').onclick = () => {
+  productPage++;
+  renderCatalog(entries());
+};
+$('addForm').onsubmit = event => {
+  event.preventDefault();
+  const name = $('newProduct').value.trim();
+  if (!name) return;
+  if (state.catalog[state.tab].some(item => item.toLowerCase() === name.toLowerCase())) {
+    alert('This product already exists');
+    return;
+  }
+  state.catalog[state.tab].push(name);
+  $('productSearch').value = '';
+  productPage = Math.floor((state.catalog[state.tab].length - 1) / pageSize);
+  $('newProduct').value = '';
+  update();
+};
+$('markAll').onclick = () => {
+  for (const item of activeEntries()) {
+    if (!item.unavailable) setStocked(item, item.total);
+  }
+  update();
+};
+$('save').onclick = () => closeShift(true);
+$('reset').onclick = () => closeShift(false);
+$('historySearch').oninput = renderHistory;
+$('copy').onclick = () => copyText(listText(activeEntries()));
+$('share').onclick = async () => {
+  const text = listText(activeEntries());
+  if (navigator.share) {
+    try {
+      await navigator.share({title: 'Barback Stock', text});
+      return;
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+    }
+  }
+  await copyText(text);
+};
+render();
+renderHistory();
 </script></body></html>
